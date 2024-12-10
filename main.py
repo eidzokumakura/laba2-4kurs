@@ -198,7 +198,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 # Маршрут для удаления пользователя по ID
 @app.delete("/users/{user_id}", response_model=UserResponse)
-async def delete_user(user_id: int, current_user: Annotated[User, Depends(get_current_active_user)], db: Session = Depends(get_db)):
+def delete_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -233,7 +233,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.put("/users/{user_id}", response_model=UserResponse)
-async def update_user(user_id: int, user_update: UserUpdate, current_user: Annotated[User, Depends(get_current_active_user)], db: Session = Depends(get_db)):
+def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -244,16 +244,19 @@ async def update_user(user_id: int, user_update: UserUpdate, current_user: Annot
     if user_update.full_name:
         user.full_name = user_update.full_name
     if user_update.password:
-        user.hashed_password = fake_hash_password(user_update.password)
-    if user_update.disabled is not None:
-        user.disabled = user_update.disabled
+        user.hashed_password = hash_password(user_update.password)
     try:
         db.commit()
         db.refresh(user)
         return user
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
+        print(f"IntegrityError: {e}")
         raise HTTPException(status_code=400, detail="Username or Email already registered")
+    except Exception as e:
+        db.rollback()
+        print(f"Exception: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.post("/register/", response_model=UserResponse)
 async def register_user(user: UserCreate, current_user: Annotated[User, Depends(get_current_active_user)], db: Session = Depends(get_db)):
@@ -274,5 +277,5 @@ async def register_user(user: UserCreate, current_user: Annotated[User, Depends(
 
 @app.get("/", response_class=HTMLResponse)
 async def get_client():
-    with open("static/index.html", "r") as file:
+    with open("../static/index.html", "r") as file:
         return file.read()
